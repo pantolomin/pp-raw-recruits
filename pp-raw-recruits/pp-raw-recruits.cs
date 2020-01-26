@@ -2,6 +2,7 @@
 using PhoenixPoint.Common.Utils;
 using PhoenixPoint.Geoscape.Core;
 using PhoenixPoint.Tactical.Entities.Equipments;
+using PhoenixPointModLoader;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -9,7 +10,7 @@ using System.Reflection;
 
 namespace pantolomin.phoenixPoint.mod.ppRawRecruits
 {
-    public class Mod
+    public class Mod: IPhoenixPointMod
     {
         private const string FILE_NAME = "Mods/pp-raw-recruits.properties";
         private const string CanHaveMutation = "CanHaveMutation";
@@ -19,8 +20,11 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
         private const string HasWeapons = "HasWeapons";
 
         private static Dictionary<string, string> generationProperties = new Dictionary<string, string>();
+        private static bool mustPreventHardcodedPriestHeadMutation = false;
 
-        public static void Init()
+        public ModLoadPriority Priority => ModLoadPriority.Low;
+
+        public void Initialize()
         {
             try
             {
@@ -42,8 +46,8 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
                 FileLog.Log(string.Concat("Failed to read the configuration file (", FILE_NAME, "):", e.ToString()));
             }
             HarmonyInstance harmonyInstance = HarmonyInstance.Create(typeof(Mod).Namespace);
-            Mod.Patch(harmonyInstance, typeof(FactionCharacterGenerator), "FillWithFactionEquipment", null, "Pre_FillWithFactionEquipment", "Post_FillWithFactionEquipment");
-            Mod.Patch(harmonyInstance, typeof(FactionCharacterGenerator), "PickRandomMutation", null, "Pre_PickRandomMutation");
+            Patch(harmonyInstance, typeof(FactionCharacterGenerator), "FillWithFactionEquipment", null, "Pre_FillWithFactionEquipment", "Post_FillWithFactionEquipment");
+            Patch(harmonyInstance, typeof(FactionCharacterGenerator), "PickRandomMutation", null, "Pre_PickRandomMutation");
         }
 
         // ******************************************************************************************************************
@@ -51,8 +55,6 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
         // Patched methods
         // ******************************************************************************************************************
         // ******************************************************************************************************************
-
-        private static bool mustPreventHardcodedPriestHeadMutation = false;
 
         public static void Pre_FillWithFactionEquipment(ref CharacterGenerationParams generationParams)
         {
@@ -110,7 +112,7 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
         // ******************************************************************************************************************
         // ******************************************************************************************************************
 
-        private static void Patch(HarmonyInstance harmony, Type target, string toPatch, Type[] types, string prefix, string postfix = null)
+        private void Patch(HarmonyInstance harmony, Type target, string toPatch, Type[] types, string prefix, string postfix = null)
         {
             MethodInfo original = types != null
                 ? target.GetMethod(
@@ -120,10 +122,10 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
                     types,
                     null)
                 : target.GetMethod(toPatch, BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-            harmony.Patch(original, Mod.ToHarmonyMethod(prefix), Mod.ToHarmonyMethod(postfix), null);
+            harmony.Patch(original, ToHarmonyMethod(prefix), ToHarmonyMethod(postfix), null);
         }
 
-        private static HarmonyMethod ToHarmonyMethod(string name)
+        private HarmonyMethod ToHarmonyMethod(string name)
         {
             if (name == null)
             {
