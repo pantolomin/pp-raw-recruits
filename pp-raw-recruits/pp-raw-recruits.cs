@@ -33,7 +33,11 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
                         generationProperties.Add(data[0].Trim(), data[1].Trim());
                     }
                 }
-            } catch (Exception e)
+            }
+            catch (FileNotFoundException) { 
+                // simply ignore
+            }
+            catch (Exception e)
             {
                 FileLog.Log(string.Concat("Failed to read the configuration file (", FILE_NAME, "):", e.ToString()));
             }
