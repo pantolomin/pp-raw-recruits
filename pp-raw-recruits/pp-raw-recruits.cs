@@ -1,5 +1,4 @@
 ﻿using Harmony;
-using PhoenixPoint.Common.Utils;
 using PhoenixPoint.Geoscape.Core;
 using PhoenixPoint.Tactical.Entities.Equipments;
 using PhoenixPointModLoader;
@@ -60,7 +59,6 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
         {
             if (generationParams != null)
             {
-                mustPreventHardcodedPriestHeadMutation = true;
                 CharacterGenerationParams newGenerationParams = new CharacterGenerationParams();
                 newGenerationParams.CanHaveMutation = getValue(CanHaveMutation, bool.Parse, false);
                 newGenerationParams.HasArmor = getValue(HasArmor, bool.Parse, false);
@@ -71,6 +69,7 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
                 newGenerationParams.WillBonus = generationParams.WillBonus;
                 newGenerationParams.SpeedBonus = generationParams.SpeedBonus;
                 generationParams = newGenerationParams;
+                mustPreventHardcodedPriestHeadMutation = !newGenerationParams.CanHaveMutation;
             }
         }
 
