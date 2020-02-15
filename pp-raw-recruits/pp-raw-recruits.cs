@@ -11,7 +11,7 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
 {
     public class Mod: IPhoenixPointMod
     {
-        private const string FILE_NAME = "Mods/pp-raw-recruits.properties";
+        private const string FILE_NAME = "pp-raw-recruits.properties";
         private const string CanHaveMutation = "CanHaveMutation";
         private const string HasArmor = "HasArmor";
         private const string HasConsumableItems = "HasConsumableItems";
@@ -25,24 +25,28 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
 
         public void Initialize()
         {
-            try
-            {
-                foreach (string row in File.ReadAllLines(FILE_NAME))
+            string manifestDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
+                ?? throw new InvalidOperationException("Could not determine operating directory. Is your folder structure correct? " +
+                "Try verifying game files in the Epic Games Launcher, if you're using it.");
+
+            string filePath = manifestDirectory + "/" + FILE_NAME;
+            if (File.Exists(filePath)) {
+                try
                 {
-                    if (row.StartsWith("#")) continue;
-                    string[] data = row.Split('=');
-                    if (data.Length == 2)
+                    foreach (string row in File.ReadAllLines(filePath))
                     {
-                        generationProperties.Add(data[0].Trim(), data[1].Trim());
+                        if (row.StartsWith("#")) continue;
+                        string[] data = row.Split('=');
+                        if (data.Length == 2)
+                        {
+                            generationProperties.Add(data[0].Trim(), data[1].Trim());
+                        }
                     }
                 }
-            }
-            catch (FileNotFoundException) { 
-                // simply ignore
-            }
-            catch (Exception e)
-            {
-                FileLog.Log(string.Concat("Failed to read the configuration file (", FILE_NAME, "):", e.ToString()));
+                catch (Exception e)
+                {
+                    FileLog.Log(string.Concat("Failed to read the configuration file (", filePath, "):", e.ToString()));
+                }
             }
             HarmonyInstance harmonyInstance = HarmonyInstance.Create(typeof(Mod).Namespace);
             Patch(harmonyInstance, typeof(FactionCharacterGenerator), "FillWithFactionEquipment", null, "Pre_FillWithFactionEquipment", "Post_FillWithFactionEquipment");
