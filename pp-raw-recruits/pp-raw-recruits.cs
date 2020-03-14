@@ -1,10 +1,17 @@
 ﻿using Harmony;
+using PhoenixPoint.Common.Entities;
+using PhoenixPoint.Common.Entities.Characters;
+using PhoenixPoint.Common.Entities.GameTags;
 using PhoenixPoint.Geoscape.Core;
+using PhoenixPoint.Geoscape.Entities;
+using PhoenixPoint.Geoscape.Levels;
 using PhoenixPoint.Tactical.Entities.Equipments;
 using PhoenixPointModLoader;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 
 namespace pantolomin.phoenixPoint.mod.ppRawRecruits
@@ -12,14 +19,16 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
     public class Mod: IPhoenixPointMod
     {
         private const string FILE_NAME = "pp-raw-recruits.properties";
-        private const string CanHaveMutation = "CanHaveMutation";
+        private const string CanHaveAugmentations = "CanHaveAugmentations";
         private const string HasArmor = "HasArmor";
         private const string HasConsumableItems = "HasConsumableItems";
         private const string HasInventoryItems = "HasInventoryItems";
         private const string HasWeapons = "HasWeapons";
-
         private static Dictionary<string, string> generationProperties = new Dictionary<string, string>();
-        private static bool mustPreventHardcodedPriestHeadMutation = false;
+
+        private const string TAG_ARMOUR_ITEM = "ArmourItem_TagDef";
+
+        private static bool isGeneratingHavenRecruit;
 
         public ModLoadPriority Priority => ModLoadPriority.Low;
 
@@ -49,8 +58,13 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
                 }
             }
             HarmonyInstance harmonyInstance = HarmonyInstance.Create(typeof(Mod).Namespace);
-            Patch(harmonyInstance, typeof(FactionCharacterGenerator), "FillWithFactionEquipment", null, "Pre_FillWithFactionEquipment", "Post_FillWithFactionEquipment");
-            Patch(harmonyInstance, typeof(FactionCharacterGenerator), "PickRandomMutation", null, "Pre_PickRandomMutation");
+            Patch(harmonyInstance, typeof(FactionCharacterGenerator), "GenerateHavenRecruit", null, "Pre_GenerateHavenRecruit", "Post_GenerateHavenRecruit");
+            Patch(harmonyInstance, typeof(CharacterEquipmentGenerator), "FillWithFactionEquipment",
+                new Type[] { typeof(GeoCharacter), typeof(GeoFaction), typeof(int), typeof(CharacterGenerationParams) },
+                "Pre_FillWithFactionEquipment");
+            Patch(harmonyInstance, typeof(CharacterEquipmentGenerator), "GetAvailableItemsForCharacter",
+                new Type[] { typeof(GeoCharacter), typeof(IEnumerable<TacticalItemDef>), typeof(CharacterGenerationParams) },
+                null, "Post_GetAvailableItemsForCharacter");
         }
 
         // ******************************************************************************************************************
@@ -59,12 +73,22 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
         // ******************************************************************************************************************
         // ******************************************************************************************************************
 
+        public static void Pre_GenerateHavenRecruit()
+        {
+            isGeneratingHavenRecruit = true;
+        }
+
+        public static void Post_GenerateHavenRecruit()
+        {
+            isGeneratingHavenRecruit = false;
+        }
+
         public static void Pre_FillWithFactionEquipment(ref CharacterGenerationParams generationParams)
         {
-            if (generationParams != null)
+            if (isGeneratingHavenRecruit && generationParams != null)
             {
                 CharacterGenerationParams newGenerationParams = new CharacterGenerationParams();
-                newGenerationParams.CanHaveMutation = getValue(CanHaveMutation, bool.Parse, false);
+                newGenerationParams.CanHaveAugmentations = getValue(CanHaveAugmentations, bool.Parse, false);
                 newGenerationParams.HasArmor = getValue(HasArmor, bool.Parse, false);
                 newGenerationParams.HasConsumableItems = getValue(HasConsumableItems, bool.Parse, false);
                 newGenerationParams.HasInventoryItems = getValue(HasInventoryItems, bool.Parse, false);
@@ -73,24 +97,19 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
                 newGenerationParams.WillBonus = generationParams.WillBonus;
                 newGenerationParams.SpeedBonus = generationParams.SpeedBonus;
                 generationParams = newGenerationParams;
-                mustPreventHardcodedPriestHeadMutation = !newGenerationParams.CanHaveMutation;
             }
         }
 
-        public static void Post_FillWithFactionEquipment()
+        public static void Post_GetAvailableItemsForCharacter(List<TacticalItemDef> __result, GeoCharacter character, CharacterGenerationParams generationParams)
         {
-            mustPreventHardcodedPriestHeadMutation = false;
-        }
-
-        public static bool Pre_PickRandomMutation(ref TacticalItemDef __result)
-        {
-            if (mustPreventHardcodedPriestHeadMutation)
+            if (isGeneratingHavenRecruit)
             {
-                mustPreventHardcodedPriestHeadMutation = false;
-                __result = null;
-                return false;
+                bool isHuman = character.ClassDef.IsHuman;
+                if (isHuman && generationParams != null && !generationParams.HasArmor)
+                {
+                    __result.RemoveAll((TacticalItemDef i) => i.Tags.Where((GameTagDef tag) => TAG_ARMOUR_ITEM.Equals(tag.name)).Count() > 0);
+                }
             }
-            return true;
         }
 
         private static T getValue<T>(string key, Func<string, T> mapper, T defaultValue)
@@ -125,6 +144,40 @@ namespace pantolomin.phoenixPoint.mod.ppRawRecruits
                     types,
                     null)
                 : target.GetMethod(toPatch, BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            if (original == null)
+            {
+                FileLog.Log("Failed to get method " + target.Name + "." + toPatch);
+                foreach (MethodInfo method in target.GetRuntimeMethods())
+                {
+                    if (method.Name.Equals(toPatch))
+                    {
+                        if (types == null)
+                        {
+                            original = method;
+                            break;
+                        }
+                        ParameterInfo[] parameters = method.GetParameters();
+                        if (parameters.Length == types.Length)
+                        {
+                            bool matches = true;
+                            for (int i=0; i< types.Length; i++)
+                            {
+                                if (!parameters[i].ParameterType.Equals(types[i]))
+                                {
+                                    FileLog.Log("Parameter difference (" + i + "): " + parameters[i].ParameterType + " != " + types[i]);
+                                    matches = false;
+                                    break;
+                                }
+                            }
+                            if (matches)
+                            {
+                                original = method;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
             harmony.Patch(original, ToHarmonyMethod(prefix), ToHarmonyMethod(postfix), null);
         }
 
